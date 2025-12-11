@@ -100,6 +100,18 @@ wait_is_system_running()
         # status of the previous command(s) affect the test result
         true
     )
+
+    # Check if any audio-related services are failed
+    if systemctl "$manager" --no-pager --failed | grep -qE 'pipewire|pulseaudio|sound|audio'; then
+        die "Audio services are not running correctly"
+    fi
+
+    # System is degraded but audio services are OK - just log a warning (we want to validate audio)
+    if systemctl "$manager" is-system-running | grep -q degraded; then
+        dlogw "System is degraded but audio services are running - continuing test"
+        return 0
+    fi
+
     die "Some services are not running correctly"
 }
 
