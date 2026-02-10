@@ -32,11 +32,29 @@ func_pipeline_export()
         return 0
     }
 
-    # got tplg_file, verify file exist
-    tplg_path=$(func_lib_get_tplg_path "$1") || {
-        die "Topology $1 not found, check the TPLG environment variable or specify topology path with -t"
-    }
-    dlogi "$SCRIPT_NAME will use topology $tplg_path to run the test case"
+    # Support multiple topologies separated by colon (:) or comma (,)
+    # sof-tplgreader.py natively supports multiple files with comma separator
+    local tplg_input="$1"
+    tplg_input="${tplg_input//,/:}"  # Normalize to colon first
+    IFS=':' read -ra tplg_array <<< "$tplg_input"
+
+    # Validate and collect accessible topologies
+    local -a valid_tplg_list=()
+    for single_tplg in "${tplg_array[@]}"; do
+        single_tplg="${single_tplg## }"; single_tplg="${single_tplg%% }"  # Trim whitespace
+        [[ -z "$single_tplg" ]] && continue
+
+        tplg_path=$(func_lib_get_tplg_path "$single_tplg") && \
+            valid_tplg_list+=("$tplg_path") || \
+            dlogw "Topology $single_tplg not found, skipping"
+    done
+
+    [ ${#valid_tplg_list[@]} -eq 0 ] && die "No topology found from: $tplg_input"
+
+    # Join topologies with comma for sof-tplgreader.py
+    local tplg_files=$(IFS=,; echo "${valid_tplg_list[*]}")
+
+    dlogi "$SCRIPT_NAME will use ${#valid_tplg_list[@]} topology file(s) to run the test case"
 
     # create block option string
     local ignore=""
@@ -60,16 +78,80 @@ func_pipeline_export()
     [[ "$ignore" ]] && opt="$opt -b '$ignore'"
     [[ "$SOFCARD" ]] && opt="$opt -s $SOFCARD"
 
-    local -a pipeline_lst
-    local cmd="sof-tplgreader.py $tplg_path $opt -e" line=""
-    dlogi "Run command to get pipeline parameters"
+    # sof-tplgreader.py handles multiple files natively with comma separator
+    local -a pipeline_lst=()
+    local cmd="sof-tplgreader.py $tplg_files $opt -e" line=""
+    dlogi "Run command to get pipeline parameters from all topologies"
     dlogc "$cmd"
-    readarray -t pipeline_lst < <(eval "$cmd")
-    for line in "${pipeline_lst[@]}"
-    do
+
+    # Capture output and check for errors
+    local output exit_code
+    output=$(eval "$cmd" 2>&1)
+    exit_code=$?
+
+    if [ $exit_code -ne 0 ]; then
+        dloge "sof-tplgreader.py failed with exit code $exit_code"
+        dloge "Command: $cmd"
+        dloge "Output: $output"
+        echo "ERROR: sof-tplgreader.py failed (exit $exit_code)" >&2
+        echo "Command: $cmd" >&2
+        echo "Output: $output" >&2
+        die "Failed to parse topologies"
+    fi
+
+    # Read output into array
+    readarray -t pipeline_lst <<< "$output"
+
+    # Check if we got any output
+    if [ ${#pipeline_lst[@]} -eq 0 ] || [ -z "${pipeline_lst[0]}" ]; then
+        dloge "sof-tplgreader.py returned no output"
+        dloge "Topologies: ${valid_tplg_list[*]}"
+        echo "ERROR: No output from sof-tplgreader.py" >&2
+        echo "Command: $cmd" >&2
+        die "No pipeline data from topologies"
+    fi
+
+    # Evaluate all collected pipeline parameters first
+    for line in "${pipeline_lst[@]}"; do
         eval "$line"
     done
-    [[ ! "$PIPELINE_COUNT" ]] && die "Failed to parse $tplg_path, please check topology parsing command"
+
+    # Deduplicate pipelines by 'dev' field (hw:X,Y) when using multiple topologies
+    # Same PCM device can be defined in multiple topology files
+    if [ ${#valid_tplg_list[@]} -gt 1 ] && [ "${PIPELINE_COUNT:-0}" -gt 0 ]; then
+        local orig_count=$PIPELINE_COUNT
+        local -A seen_devs=()
+        local new_idx=0
+
+        # Iterate through all pipelines and keep only first occurrence of each unique 'dev'
+        for idx in $(seq 0 $((PIPELINE_COUNT - 1))); do
+            local dev_val=$(func_pipeline_parse_value "$idx" "dev")
+
+            # Skip if we've seen this dev before
+            if [[ -n "${seen_devs[$dev_val]}" ]]; then
+                continue
+            fi
+            seen_devs["$dev_val"]=1
+
+            # If this is a new unique dev, copy pipeline to new index if needed
+            if [ $new_idx -ne $idx ]; then
+                # Copy all fields from old index to new index
+                for key in pcm id dev type fmt fmts rate rates channel channels snd; do
+                    local val=$(func_pipeline_parse_value "$idx" "$key")
+                    if [[ -n "$val" ]]; then
+                        eval "PIPELINE_${new_idx}[$key]=\"$val\""
+                    fi
+                done
+            fi
+            new_idx=$((new_idx + 1))
+        done
+
+        # Update pipeline count
+        PIPELINE_COUNT=$new_idx
+        dlogi "Deduplicated $orig_count pipelines to $PIPELINE_COUNT unique devices"
+    fi
+
+    [[ ! "$PIPELINE_COUNT" ]] && die "Failed to parse topologies, please check topology parsing command"
     [[ $PIPELINE_COUNT -eq 0 ]] && dlogw "No pipeline found with option: $opt, unable to run $SCRIPT_NAME" && exit 2
     return 0
 }
@@ -78,7 +160,10 @@ func_pipeline_parse_value()
 {
     local idx=$1
     local key=$2
-    [[ $idx -ge $PIPELINE_COUNT ]] && echo "" && return
+    if [[ $idx -ge $PIPELINE_COUNT ]]; then
+        echo ""
+        return 0
+    fi
     local array_key='PIPELINE_'"$idx"'['"$key"']'
     eval echo "\${$array_key}" # dynmaic echo the target value of the PIPELINE
 }
