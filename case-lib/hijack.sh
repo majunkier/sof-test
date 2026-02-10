@@ -12,6 +12,34 @@ function func_exit_handler()
 
     dlogi "Starting func_exit_handler($exit_status)"
 
+    # Cleanup audio processes (aplay/arecord/tinyplay/tinycap) that may be left running
+    # This prevents "Device or resource busy" errors in subsequent tests
+    case "$SOF_ALSA_TOOL" in
+        'alsa')
+            if pgrep -q aplay || pgrep -q arecord; then
+                dlogi "Cleaning up leftover aplay/arecord processes"
+                pkill -9 aplay 2>/dev/null || true
+                pkill -9 arecord 2>/dev/null || true
+                sleep 0.5
+            fi
+            ;;
+        'tinyalsa')
+            if pgrep -q tinyplay || pgrep -q tinycap; then
+                dlogi "Cleaning up leftover tinyplay/tinycap processes"
+                pkill -9 tinyplay 2>/dev/null || true
+                pkill -9 tinycap 2>/dev/null || true
+                sleep 0.5
+            fi
+            ;;
+        *)
+            # Unknown or unset - cleanup both
+            pkill -9 aplay 2>/dev/null || true
+            pkill -9 arecord 2>/dev/null || true
+            pkill -9 tinyplay 2>/dev/null || true
+            pkill -9 tinycap 2>/dev/null || true
+            ;;
+    esac
+
     func_lib_check_and_disable_pipewire
 
     # call trace
