@@ -46,25 +46,11 @@ start_test
 # Support multiple topologies separated by colon (:) or comma (,)
 # sof-tplgreader.py natively supports multiple files with comma separator
 tplg="${tplg//,/:}"  # Normalize to colon first
-IFS=':' read -ra tplg_array <<< "$tplg"
+# Parse and validate topology files
+func_tplg_parse_and_validate "$tplg"
+tplg_files="$TPLG_FILES"
 
-# Validate and collect accessible topologies
-valid_tplg_list=()
-for single_tplg in "${tplg_array[@]}"; do
-    single_tplg="${single_tplg## }"; single_tplg="${single_tplg%% }"  # Trim whitespace
-    [[ -z "$single_tplg" ]] && continue
-    
-    tplg_path=$(func_lib_get_tplg_path "$single_tplg") && \
-        valid_tplg_list+=("$tplg_path") || \
-        dlogw "Topology not found: $single_tplg (skipping)"
-done
-
-[ ${#valid_tplg_list[@]} -eq 0 ] && die "No available topology for this test case"
-
-# Join topologies with comma for sof-tplgreader.py
-tplg_files=$(IFS=,; echo "${valid_tplg_list[*]}")
-
-dlogi "Processing ${#valid_tplg_list[@]} topology file(s) for 'both' pipelines"
+dlogi "Processing $TPLG_COUNT topology file(s) for 'both' pipelines"
 
 # get 'both' pcm: pipelines with same id but different types (playback + capture)
 declare -A tmp_id_types  # Store "id:type" combinations seen
