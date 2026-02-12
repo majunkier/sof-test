@@ -43,11 +43,16 @@ setup_kernel_check_point
 # sof-tplgreader.py handles multiple files natively
 tplg_str=$(sof-tplgreader.py "$tplg_files" -d id pcm type -o)
 
-# Deduplicate pipelines when using multiple topologies
+# Deduplicate and sort pipelines numerically by id
 # Same pipeline (id + pcm + type) can appear in multiple topology files
+# Sort format: id=X;pcm=Y;type=Z
+# -t';' uses semicolon as delimiter, -k1.4 sorts by field 1 starting at char 4 (after "id=")
+# -n for numeric sort, -u for unique
+tplg_str=$(echo "$tplg_str" | sort -t';' -k1.4 -n -u)
 if [ "$TPLG_COUNT" -gt 1 ]; then
-    tplg_str=$(echo "$tplg_str" | sort -u)
-    dlogi "Deduplicated pipelines from $TPLG_COUNT topology files"
+    dlogi "Deduplicated and sorted pipelines from $TPLG_COUNT topology files"
+else
+    dlogi "Sorted pipelines by id"
 fi
 
 pcm_str=$(sof-dump-status.py -i "${SOFCARD:-0}")

@@ -178,7 +178,46 @@ func_pipeline_export()
 
         # Update pipeline count
         PIPELINE_COUNT=$new_idx
-        dlogi "Deduplicated $orig_count pipelines to $PIPELINE_COUNT unique devices"
+        if [ "$orig_count" -ne "$PIPELINE_COUNT" ]; then
+            dlogi "Deduplicated $orig_count pipelines to $PIPELINE_COUNT unique devices"
+        fi
+
+        # Sort pipelines by id to ensure consistent ordering (matches sof-dump-status.py output)
+        if [ "$PIPELINE_COUNT" -gt 0 ]; then
+            # Collect all pipelines with their id
+            local -a sorted_indices=()
+            for idx in $(seq 0 $((PIPELINE_COUNT - 1))); do
+                local id_val=$(func_pipeline_parse_value "$idx" "id")
+                sorted_indices+=("$id_val:$idx")
+            done
+
+            # Sort by id (numeric)
+            IFS=$'\n' sorted_indices=($(sort -t: -k1 -n <<<"${sorted_indices[*]}"))
+            unset IFS
+
+            # Create temporary copy of all pipelines
+            declare -A temp_pipelines
+            for idx in $(seq 0 $((PIPELINE_COUNT - 1))); do
+                for key in pcm id dev type fmt fmts rate rates channel channels snd; do
+                    local val=$(func_pipeline_parse_value "$idx" "$key")
+                    [[ -n "$val" ]] && temp_pipelines["${idx}_${key}"]="$val"
+                done
+            done
+
+            # Reorder pipelines based on sorted id
+            local new_idx=0
+            for entry in "${sorted_indices[@]}"; do
+                local old_idx="${entry#*:}"
+                for key in pcm id dev type fmt fmts rate rates channel channels snd; do
+                    local val="${temp_pipelines[${old_idx}_${key}]}"
+                    if [[ -n "$val" ]]; then
+                        eval "PIPELINE_${new_idx}[$key]=\"$val\""
+                    fi
+                done
+                new_idx=$((new_idx + 1))
+            done
+            dlogi "Sorted $PIPELINE_COUNT pipelines by id"
+        fi
     fi
 
     [[ ! "$PIPELINE_COUNT" ]] && die "Failed to parse topologies, please check topology parsing command"
