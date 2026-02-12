@@ -75,21 +75,8 @@ frames=${OPT_VAL['n']}
 
 start_test
 
-# If PCM devices not specified, try to extract from topology
-if [ -z "$pcm_p" ] || [ -z "$pcm_c" ]; then
-	dlogi "PCM devices not fully specified, trying to extract from topology"
-
-	[ -z "$TPLG" ] && dloge "No topology specified via TPLG environment variable" && exit 2
-
-	# Get playback PCM if not specified
-	[ -z "$pcm_p" ] && func_extract_pcm_from_topology "$TPLG" "playback" "pcm_p" "channel_p" "2"
-
-	# Get capture PCM if not specified
-	[ -z "$pcm_c" ] && func_extract_pcm_from_topology "$TPLG" "capture" "pcm_c" "channel_c" "1"
-fi
-
-# Final validation
-if [ -z "$pcm_p" ] || [ -z "$pcm_c" ]; then
+if [ "$pcm_p" = "" ]||[ "$pcm_c" = "" ];
+then
 	dloge "No playback or capture PCM is specified. Skip the alsabat test"
 	exit 2
 fi
