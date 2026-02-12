@@ -16,6 +16,23 @@ func_tplg_parse_and_validate()
         single_tplg="${single_tplg## }"; single_tplg="${single_tplg%% }"  # Trim whitespace
         [[ -z "$single_tplg" ]] && continue
 
+        # Filter out topology files based on system config (NO_HDMI_MODE, NO_BT_MODE, NO_DMIC_MODE)
+        local tplg_basename=$(basename "$single_tplg")
+        local tplg_lower="${tplg_basename,,}"  # Convert to lowercase
+
+        if [ -n "$NO_HDMI_MODE" ] && [[ "$tplg_lower" == *"hdmi"* ]]; then
+            dlogw "Skipping HDMI topology (NO_HDMI_MODE=true): $single_tplg"
+            continue
+        fi
+        if [ -n "$NO_BT_MODE" ] && [[ "$tplg_lower" == *"bt"* || "$tplg_lower" == *"bluetooth"* ]]; then
+            dlogw "Skipping Bluetooth topology (NO_BT_MODE=true): $single_tplg"
+            continue
+        fi
+        if [ -n "$NO_DMIC_MODE" ] && [[ "$tplg_lower" == *"dmic"* ]]; then
+            dlogw "Skipping DMIC topology (NO_DMIC_MODE=true): $single_tplg"
+            continue
+        fi
+
         local tplg_path
         tplg_path=$(func_lib_get_tplg_path "$single_tplg") && \
             valid_tplg_list+=("$tplg_path") || \
