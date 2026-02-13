@@ -40,8 +40,25 @@ dlogi "Processing $TPLG_COUNT topology file(s)"
 
 setup_kernel_check_point
 
-# sof-tplgreader.py handles multiple files natively
-tplg_str=$(sof-tplgreader.py "$tplg_files" -d id pcm type -o)
+# Build filter options (same as pipeline.sh func_pipeline_export)
+opt=""
+# In no HDMI mode, exclude HDMI pipelines
+[ -z "$NO_HDMI_MODE" ] || opt="$opt & ~pcm:HDMI"
+# In no Bluetooth mode, exclude BT pipelines
+[ -z "$NO_BT_MODE" ] || opt="$opt & ~pcm:Bluetooth"
+# In no DMIC mode, exclude DMIC pipelines
+[ -z "$NO_DMIC_MODE" ] || opt="$opt & ~pcm:DMIC"
+
+# Remove leading " & " if present
+opt="${opt# & }"
+
+# Build sof-tplgreader.py command with filter
+if [ -n "$opt" ]; then
+    dlogi "Applying pipeline filter: $opt"
+    tplg_str=$(sof-tplgreader.py "$tplg_files" -f "$opt" -d id pcm type -o)
+else
+    tplg_str=$(sof-tplgreader.py "$tplg_files" -d id pcm type -o)
+fi
 
 # Deduplicate and sort pipelines numerically by id
 # Same pipeline (id + pcm + type) can appear in multiple topology files
