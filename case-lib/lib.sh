@@ -1246,7 +1246,8 @@ is_ipc4()
 logger_disabled()
 {
     # Disable logging when available...
-    if [ "${OPT_VAL['s']}" -eq 0 ]; then
+    local log_switch="${OPT_VAL['s']:-1}"
+    if [ "$log_switch" -eq 0 ]; then
         return 0
     fi
 

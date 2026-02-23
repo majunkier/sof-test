@@ -16,7 +16,7 @@ function func_exit_handler()
     # This prevents "Device or resource busy" errors in subsequent tests
     case "$SOF_ALSA_TOOL" in
         'alsa')
-            if pgrep -q aplay || pgrep -q arecord; then
+            if pgrep aplay >/dev/null 2>&1 || pgrep arecord >/dev/null 2>&1; then
                 dlogi "Cleaning up leftover aplay/arecord processes"
                 pkill -9 aplay 2>/dev/null || true
                 pkill -9 arecord 2>/dev/null || true
@@ -24,7 +24,7 @@ function func_exit_handler()
             fi
             ;;
         'tinyalsa')
-            if pgrep -q tinyplay || pgrep -q tinycap; then
+            if pgrep tinyplay >/dev/null 2>&1 || pgrep tinycap >/dev/null 2>&1; then
                 dlogi "Cleaning up leftover tinyplay/tinycap processes"
                 pkill -9 tinyplay 2>/dev/null || true
                 pkill -9 tinycap 2>/dev/null || true
