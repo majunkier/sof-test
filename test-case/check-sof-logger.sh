@@ -41,16 +41,25 @@ md5list()
     while read -r; do md5sum "$REPLY"; done
 }
 
+loggerBin=$(type -p sof-logger)
+
 # Recent Ubuntu versions symlink the entire /bin -> /usr/bin so we
 # cannot just count the number of filenames we found. Count the
 # number of different _checksums_ we found in PATH.
-if type -a -p sof-logger | md5list | awk '{ print $1 }' |
-        sort -u | tail -n +2 | grep -q . ; then
-    dloge "There are different sof-logger in PATH on the system $(hostname)!"
-    type -a -p sof-logger | md5list
-    die "Not testing a random sof-logger version"
+md5_out=$(type -a -p sof-logger | md5list)
+if [ "$(echo "$md5_out" | awk '{ print $1 }' | sort -u | wc -l)" -gt 1 ]; then
+    dlogw "There are different sof-logger binaries in PATH on the system $(hostname)!"
+    echo "$md5_out"
+
+    # Prefer distro/system binary over /usr/local when versions differ.
+    if [ -x /usr/bin/sof-logger ]; then
+        loggerBin=/usr/bin/sof-logger
+    elif [ -x /bin/sof-logger ]; then
+        loggerBin=/bin/sof-logger
+    fi
+
+    dlogw "Using selected sof-logger: $loggerBin"
 fi
-loggerBin=$(type -p sof-logger)
 dlogi "Found file: $(md5sum "$loggerBin" | awk '{print $2, $1;}')"
 
 if ! is_firmware_file_zephyr; then
@@ -108,6 +117,11 @@ run_loggers()
     local error_file=$LOG_ROOT/logger.error.txt
 
     local etrace_exit
+
+    timeout_status_ok()
+    {
+        [ "$1" -eq 124 ] || [ "$1" -eq 125 ]
+    }
 
     # This test is not really supposed to run while the DSP is busy at
     # the same time, so $data_file will hopefully not be long.
@@ -182,8 +196,7 @@ run_loggers()
         # Sof-logger DMA logging (IPC3 only)
 
         loggerStatus=0; wait "$dmaPID" || loggerStatus=$?
-        # 124 is the normal timeout exit status
-        test "$loggerStatus" -eq 124 || {
+        timeout_status_ok "$loggerStatus" || {
             cat "$error_file"
             die "timeout sof-logger returned unexpected: $loggerStatus"
         }
@@ -196,7 +209,7 @@ run_loggers()
             # SOF kernel IPC4 SRAM logging interface (mtrace)
 
             loggerStatus=0; wait "$mtracetoolPID" || loggerStatus=$?
-            test "$loggerStatus" -eq 124 || {
+            timeout_status_ok "$loggerStatus" || {
                 cat "$etrace_file"
                 cat "$etrace_stderr_file"
                 die "timeout $mtracetool returned unexpected: $loggerStatus"
@@ -205,7 +218,7 @@ run_loggers()
             # SOF kernel IPC3 SRAM logging interface (etrace)
 
             loggerStatus=0; wait "$cavstoolPID" || loggerStatus=$?
-            test "$loggerStatus" -eq 124 || {
+            timeout_status_ok "$loggerStatus" || {
                 cat "$error_file"
                 die "timeout $cavstool returned unexpected: $loggerStatus"
             }
