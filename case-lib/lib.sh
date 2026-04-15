@@ -1462,6 +1462,18 @@ set_alsa()
   [[ "${rc}" -ne 0 ]] && dlogw "alsactl restore error=${rc}" && rc=0
   printf '%s\n' '-^^------- Restore ALSA defaults -------^^-' >> "${alsa_log}"
 
+  # Re-apply MODEL state LAST to ensure it overrides persistent state
+  if [ ! -z "$MODEL" ]; then
+        local MODEL_STATE="${SCRIPT_HOME}/alsa_settings/${MODEL}.state"
+    if [ -f "${MODEL_STATE}" ]; then
+      dlogi "Re-apply MODEL state after system restore to override persistent state"
+      printf '%s\n' '-vv------- Re-apply MODEL state -------vv-' >> "${alsa_log}"
+      alsactl restore --file="${MODEL_STATE}" --no-init-fallback --no-ucm >> "${alsa_log}" 2>&1 || rc=$?
+      [[ "${rc}" -ne 0 ]] && dlogw "MODEL state re-apply error=${rc}" && rc=0
+      printf '%s\n' '-^^------- Re-apply MODEL state -------^^-' >> "${alsa_log}"
+    fi
+  fi
+
   reset_sof_volume
 
   # If MODEL is defined, set proper gain for the platform
